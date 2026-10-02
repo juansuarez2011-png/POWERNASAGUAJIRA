@@ -7,11 +7,13 @@ from plotly.subplots import make_subplots
 from datetime import datetime
 import io
 import utm
+import folium
+from streamlit_folium import st_folium
 
 # Configuración adaptada para móviles y PC
 st.set_page_config(
-    page_title="Syntro - Dashboard Climático UTM & Diario",
-    page_icon="🌍",
+    page_title="Syntro - Dashboard Climático con Mapa Interactivo",
+    page_icon="🗺️",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -23,43 +25,75 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🌍 Syntro: Dashboard Climático (UTM, Diario y Multi-escala)")
-st.markdown("Sistema de balance hídrico y teledetección (NASA POWER) sincronizado para **Móvil y PC**.")
+st.title("🌍 Syntro: Dashboard Climático con Selección Interactiva en Mapa")
+st.markdown("Plataforma de balance hídrico y teledetección (NASA POWER) sincronizada para **Móvil y PC**.")
 
-# Barra Lateral (Sidebar) para Parámetros y Sistema de Coordenadas
+# Inicializar variables de sesión para coordenadas si no existen
+if 'lat' not in st.session_state:
+    st.session_state['lat'] = 8.0000
+if 'lon' not in st.session_state:
+    st.session_state['lon'] = -66.0000
+
+# Barra Lateral (Sidebar) para Parámetros de Fechas y Modelo
 with st.sidebar:
-    st.header("⚙️ Configuración del Sitio")
+    st.header("⚙️ Configuración del Modelo")
     
-    # Selector de Sistema de Coordenadas
-    coord_system = st.radio("Sistema de Coordenadas", ("Geográficas (Lat/Lon)", "UTM (Metros)"))
+    coord_system = st.selectbox("Sistema de Visualización", ("Geográficas (Lat/Lon)", "UTM (Metros)"))
     
-    if coord_system == "UTM (Metros)":
-        st.markdown("---")
-        st.subheader("Parámetros UTM")
-        easting = st.number_input("Easting (X)", value=400000.0, format="%.2f")
-        northing = st.number_input("Northing (Y)", value=1000000.0, format="%.2f")
-        zone_number = st.number_input("Zona UTM", value=19, min_value=1, max_value=60, step=1)
-        hemisphere = st.selectbox("Hemisferio", ("Norte", "Sur"), index=0)
-        
-        # Conversión automática de UTM a Lat/Lon para la API de la NASA
-        is_northern = (hemisphere == "Norte")
-        lat_conv, lon_conv = utm.to_latlon(easting, northing, int(zone_number), northern=is_northern)
-        
-        lat = str(round(lat_conv, 6))
-        lon = str(round(lon_conv, 6))
-        st.info(f"📍 Lat/Lon calculada: {lat}, {lon}")
-    else:
-        st.markdown("---")
-        st.subheader("Coordenadas Geográficas")
-        lat = st.text_input("Latitud (- Sur)", value="-8.83")
-        lon = st.text_input("Longitud (- Oeste)", value="-35.28")
-
     st.markdown("---")
     start_date = st.text_input("Fecha Inicio (AAAAMMDD)", value="20201001")
     end_date = st.text_input("Fecha Fin (AAAAMMDD)", value="20250331")
     cad = st.number_input("CAD del Suelo (mm)", value=100.0, min_value=10.0, max_value=500.0)
     
     run_btn = st.button("🚀 Cargar y Calcular", type="primary")
+
+# --- SECCIÓN DEL MAPA INTERACTIVO CON BOTÓN DE MOSTRAR / OCULTAR ---
+st.markdown("---")
+mostrar_mapa = st.toggle("🗺️ Mostrar / Ocultar Mapa Interactivo de Selección", value=True)
+
+if mostrar_mapa:
+    st.info("💡 **Instrucciones:** Haz clic en cualquier punto del mapa para seleccionar automáticamente las coordenadas del sitio de estudio.")
+    
+    # Crear mapa centrado en la última ubicación o por defecto en Venezuela
+    m = folium.Map(
+        location=[st.session_state['lat'], st.session_state['lon']], 
+        zoom_start=6,
+        tiles="OpenStreetMap"
+    )
+    
+    # Agregar marcador en la posición actual
+    folium.Marker(
+        [st.session_state['lat'], st.session_state['lon']],
+        popup=f"Lat: {st.session_state['lat']}, Lon: {st.session_state['lon']}",
+        icon=folium.Icon(color="red", icon="info-sign")
+    ).add_to(m)
+    
+    # Renderizar mapa interactivo y capturar clics
+    map_data = st_folium(m, height=400, use_container_width=True, key="mapa_interactivo")
+    
+    # Si el usuario hace clic en el mapa, actualizar coordenadas
+    if map_data and map_data.get("last_clicked"):
+        clicked_lat = map_data["last_clicked"]["lat"]
+        clicked_lon = map_data["last_clicked"]["lng"]
+        if clicked_lat != st.session_state['lat'] or clicked_lon != st.session_state['lon']:
+            st.session_state['lat'] = round(clicked_lat, 6)
+            st.session_state['lon'] = round(clicked_lon, 6)
+            st.rerun()
+
+# Mostrar coordenadas seleccionadas según el sistema elegido
+lat_val = st.session_state['lat']
+lon_val = st.session_state['lon']
+
+try:
+    easting, northing, zone_number, zone_letter = utm.from_latlon(lat_val, lon_val)
+    hemisphere = "Norte" if lat_val >= 0 else "Sur"
+except:
+    easting, northing, zone_number, hemisphere = 0.0, 0.0, 19, "Norte"
+
+col_c1, col_c2, col_c3 = st.columns(3)
+col_c1.metric("📍 Latitud / Longitud", f"{lat_val}, {lon_val}")
+col_c2.metric("📐 Coordenadas UTM (X, Y)", f"{easting:,.1f} E, {northing:,.1f} N")
+col_c3.metric("🌍 Zona UTM / Hemisferio", f"Zona {zone_number} ({hemisphere})")
 
 # Función con caché para optimizar la consulta a la API de la NASA
 @st.cache_data(show_spinner=True)
@@ -85,8 +119,8 @@ def fetch_nasa_data(lat, lon, start, end):
 
 if run_btn:
     try:
-        with st.spinner("Conectando con NASA POWER y ejecutando calibración hídrica..."):
-            df_raw, api_url = fetch_nasa_data(lat, lon, start_date, end_date)
+        with st.spinner("Conectando con NASA POWER y ejecutando balance hídrico..."):
+            df_raw, api_url = fetch_nasa_data(str(lat_val), str(lon_val), start_date, end_date)
             
             # Limpieza y conversión de fechas
             df_raw['Date'] = pd.to_datetime(df_raw['YEAR'].astype(str) + df_raw['DOY'].astype(str).str.zfill(3), format='%Y%j')
@@ -153,16 +187,15 @@ if run_btn:
             st.session_state['data_trimestral'] = agg('Trimestre')
             st.session_state['data_anual'] = agg('Anio')
             st.session_state['loaded'] = True
-            st.success("¡Calibración y procesamiento completados con éxito!")
+            st.success("¡Datos cargados y procesados con éxito!")
 
     except Exception as e:
         st.error(f"Error en el procesamiento: {str(e)}")
 
-# Sección de Visualización Interactiva Multi-escala (Incluyendo Diario)
+# Sección de Visualización Interactiva Multi-escala y Gráficas
 if st.session_state.get('loaded', False):
     st.markdown("---")
     
-    # Selector horizontal para cambiar entre Diario, Mensual, Trimestral y Anual
     escala = st.radio(
         "📅 Escala Temporal de Análisis:",
         ("Diario", "Mensual", "Trimestral", "Anual"),
@@ -182,7 +215,6 @@ if st.session_state.get('loaded', False):
         dff = st.session_state['data_anual']
         x_col = 'Anio'
 
-    # Construcción de gráficos múltiples optimizados para móvil y PC
     fig = make_subplots(
         rows=4, cols=1,
         subplot_titles=(
@@ -219,15 +251,14 @@ if st.session_state.get('loaded', False):
 
     st.plotly_chart(fig, use_container_width=True, config={'responsive': True, 'displayModeBar': False})
 
-    # Sección colapsable para tablas y descargas en CSV
     with st.expander(f"📊 Ver Tabla de Datos ({escala}) y Descargar CSV"):
         st.dataframe(dff, use_container_width=True)
         csv_data = dff.to_csv(index=False).encode('utf-8')
         st.download_button(
             label=f"📥 Descargar CSV ({escala})",
             data=csv_data,
-            file_name=f"clima_{escala.lower()}_{lat}_{lon}.csv",
+            file_name=f"clima_{escala.lower()}_{lat_val}_{lon_val}.csv",
             mime="text/csv"
         )
 else:
-    st.info("👆 Abre el menú lateral izquierdo para configurar tus coordenadas UTM o geográficas, y presiona **'Cargar y Calcular'**.")
+    st.info("👆 Selecciona el punto en el mapa interactivo (o usa el botón para ocultarlo), verifica tus coordenadas y haz clic en **'Cargar y Calcular'** en el menú lateral.")
