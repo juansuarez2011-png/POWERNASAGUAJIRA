@@ -44,12 +44,11 @@ with st.sidebar:
     coord_input_mode = st.radio("Sistema de Coordenadas", ("Geográficas (Lat/Lon)", "UTM (Metros)"))
     
     if coord_input_mode == "Geográficas (Lat/Lon)":
-        lat_input = st.number_input("Latitud (- Sur)", value=float(st.session_state['lat']), format="("%.6f")")
-        lon_input = st.number_input("Longitud (- Oeste)", value=float(st.session_state['lon']), format="("%.6f")")
+        lat_input = st.number_input("Latitud (- Sur)", value=float(st.session_state['lat']), format="%.6f")
+        lon_input = st.number_input("Longitud (- Oeste)", value=float(st.session_state['lon']), format="%.6f")
         st.session_state['lat'] = lat_input
         st.session_state['lon'] = lon_input
     else:
-        # Calcular UTM inicial basado en la sesión actual
         try:
             init_e, init_n, init_z, init_l = utm.from_latlon(st.session_state['lat'], st.session_state['lon'])
             init_north = st.session_state['lat'] >= 0
@@ -111,7 +110,7 @@ if mostrar_mapa:
     folium.TileLayer(
         tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
         attr='Google Híbrido',
-        name='🛰️🗺️️ Google Híbrido (Etiquetado)',
+        name='🛰️🗺 Google Híbrido (Etiquetado)',
         overlay=False,
         control=True
     ).add_to(m)
@@ -120,7 +119,7 @@ if mostrar_mapa:
     folium.TileLayer(
         tiles='https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
         attr='Google Maps',
-        name='🗺️ Google Calles',
+        name='🗺️️ Google Calles',
         overlay=False,
         control=True
     ).add_to(m)
@@ -142,7 +141,6 @@ if mostrar_mapa:
     
     folium.LayerControl().add_to(m)
     
-    # Renderizar mapa sin forzar recargas automáticas (sin pestañazos)
     map_data = st_folium(m, height=480, use_container_width=True, key="mapa_interactivo")
     
     if map_data:
@@ -171,7 +169,6 @@ col_c1.metric("🌍 Geográficas (Lat / Lon)", f"{lat_val}, {lon_val}")
 col_c2.metric("📐 UTM (Easting / Northing)", f"{easting:,.1f} E, {northing:,.1f} N")
 col_c3.metric("🌐 Zona UTM y Hemisferio", f"Zona {zone_number} ({hemisphere})")
 
-# Función con caché para consultar la API de la NASA POWER
 @st.cache_data(show_spinner=True)
 def fetch_nasa_data(lat, lon, start, end):
     url = (
