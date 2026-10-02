@@ -26,7 +26,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🛰️ Syntro: Dashboard Climático con Control de Coordenadas y Mapas Satelitales")
+st.title("🛰️️ Syntro: Dashboard Climático con Control de Coordenadas y Mapa Híbrido Fijo")
 st.markdown("Sistema avanzado de balance hídrico (NASA POWER) sincronizado para **Móvil y PC**.")
 
 # Inicializar estado en sesión si no existen
@@ -37,92 +37,20 @@ if 'lon' not in st.session_state:
 if 'zoom' not in st.session_state:
     st.session_state['zoom'] = 6
 
-# --- BARRA LATERAL CON CONFIGURACIÓN Y VENTANAS DE COORDENADAS ---
-with st.sidebar:
-    st.header("⚙️ Configuración y Coordenadas")
-    
-    coord_input_mode = st.radio("Sistema de Coordenadas", ("Geográficas (Lat/Lon)", "UTM (Metros)"))
-    
-    if coord_input_mode == "Geográficas (Lat/Lon)":
-        lat_input = st.number_input("Latitud (- Sur)", value=float(st.session_state['lat']), format="%.6f")
-        lon_input = st.number_input("Longitud (- Oeste)", value=float(st.session_state['lon']), format="%.6f")
-        st.session_state['lat'] = lat_input
-        st.session_state['lon'] = lon_input
-    else:
-        try:
-            init_e, init_n, init_z, init_l = utm.from_latlon(st.session_state['lat'], st.session_state['lon'])
-            init_north = st.session_state['lat'] >= 0
-        except:
-            init_e, init_n, init_z, init_north = 400000.0, 1000000.0, 19, True
-
-        easting_input = st.number_input("Easting (X)", value=float(init_e), format="%.2f")
-        northing_input = st.number_input("Northing (Y)", value=float(init_n), format="%.2f")
-        zone_input = st.number_input("Zona UTM", value=int(init_z), min_value=1, max_value=60, step=1)
-        hemi_input = st.selectbox("Hemisferio", ("Norte", "Sur"), index=0 if init_north else 1)
-        
-        try:
-            l_conv, lo_conv = utm.to_latlon(easting_input, northing_input, int(zone_input), northern=(hemi_input=="Norte"))
-            st.session_state['lat'] = round(l_conv, 6)
-            st.session_state['lon'] = round(lo_conv, 6)
-            st.info(f"📍 Lat/Lon equivalente: {st.session_state['lat']}, {st.session_state['lon']}")
-        except Exception as e:
-            st.error("Error al convertir UTM. Verifique los valores.")
-
-    st.markdown("---")
-    start_date = st.text_input("Fecha Inicio (AAAAMMDD)", value="20201001")
-    end_date = st.text_input("Fecha Fin (AAAAMMDD)", value="20250331")
-    cad = st.number_input("CAD del Suelo (mm)", value=100.0, min_value=10.0, max_value=500.0)
-    
-    run_btn = st.button("🚀 Cargar y Calcular", type="primary")
-
-# --- MAPA INTERACTIVO SIN PESTAÑAZOS ---
+# --- CAPTURAR CLIC EN EL MAPA ANTES DE RENDERIZAR LA BARRA LATERAL ---
+# Esto permite que las coordenadas cambien en el momento y se reflejen inmediatamente en las cajas de texto.
 st.markdown("---")
 mostrar_mapa = st.toggle("🗺️ Mostrar / Ocultar Mapa Interactivo y Buscador de Sectores", value=True)
 
 if mostrar_mapa:
-    st.info("💡 **Instrucciones:** Usa la lupa 🔍 para buscar municipio, estado o sector, o haz clic en el mapa para posicionar el punto sin interrupciones.")
+    st.info("💡 **Instrucciones:** Usa la lupa 🔍 para buscar municipio, estado o sector, o haz clic en cualquier lugar del mapa para mover el punto y actualizar las coordenadas.")
     
     m = folium.Map(
         location=[st.session_state['lat'], st.session_state['lon']], 
         zoom_start=st.session_state['zoom'],
-        tiles=None
-    )
-    
-    # 1. Capa Esri World Imagery (Satélite)
-    folium.TileLayer(
-        tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        attr='Esri World Imagery',
-        name='🛰️ Esri Satélite',
-        overlay=False,
-        control=True
-    ).add_to(m)
-
-    # 2. Capa Google Satélite
-    folium.TileLayer(
-        tiles='https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
-        attr='Google Satélite',
-        name='🌍 Google Satélite',
-        overlay=False,
-        control=True
-    ).add_to(m)
-
-    # 3. Capa Google Híbrido (Con nombres de municipios, estados y sectores)
-    folium.TileLayer(
         tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
-        attr='Google Híbrido',
-        name='🛰️🗺 Google Híbrido (Etiquetado)',
-        overlay=False,
-        control=True
-    ).add_to(m)
-
-    # 4. Capa Google Calles
-    folium.TileLayer(
-        tiles='https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
-        attr='Google Maps',
-        name='🗺️️ Google Calles',
-        overlay=False,
-        control=True
-    ).add_to(m)
+        attr='Google Híbrido'
+    )
 
     # Buscador de sectores / municipios / estados
     Geocoder(
@@ -132,14 +60,12 @@ if mostrar_mapa:
         add_marker=True
     ).add_to(m)
 
-    # Marcador en la posición actual
+    # Marcador fijo en la posición actual
     folium.Marker(
         [st.session_state['lat'], st.session_state['lon']],
         popup=f"Lat: {st.session_state['lat']}, Lon: {st.session_state['lon']}",
         icon=folium.Icon(color="red", icon="crosshairs", prefix="fa")
     ).add_to(m)
-    
-    folium.LayerControl().add_to(m)
     
     map_data = st_folium(m, height=480, use_container_width=True, key="mapa_interactivo")
     
@@ -152,6 +78,53 @@ if mostrar_mapa:
             if clicked_lat != st.session_state['lat'] or clicked_lon != st.session_state['lon']:
                 st.session_state['lat'] = round(clicked_lat, 6)
                 st.session_state['lon'] = round(clicked_lon, 6)
+                st.rerun()
+
+# --- BARRA LATERAL CON CONFIGURACIÓN Y VENTANAS DE COORDENADAS DINÁMICAS ---
+with st.sidebar:
+    st.header("⚙️ Configuración y Coordenadas")
+    
+    coord_input_mode = st.radio("Sistema de Coordenadas", ("Geográficas (Lat/Lon)", "UTM (Metros)"))
+    
+    if coord_input_mode == "Geográficas (Lat/Lon)":
+        lat_input = st.number_input("Latitud (- Sur)", value=float(st.session_state['lat']), format="%.6f", step=0.0001)
+        lon_input = st.number_input("Longitud (- Oeste)", value=float(st.session_state['lon']), format="%.6f", step=0.0001)
+        
+        if lat_input != st.session_state['lat'] or lon_input != st.session_state['lon']:
+            st.session_state['lat'] = lat_input
+            st.session_state['lon'] = lon_input
+            st.rerun()
+    else:
+        try:
+            init_e, init_n, init_z, init_l = utm.from_latlon(st.session_state['lat'], st.session_state['lon'])
+            init_north = st.session_state['lat'] >= 0
+        except:
+            init_e, init_n, init_z, init_north = 400000.0, 1000000.0, 19, True
+
+        easting_input = st.number_input("Easting (X)", value=float(init_e), format="%.2f", step=10.0)
+        northing_input = st.number_input("Northing (Y)", value=float(init_n), format="%.2f", step=10.0)
+        zone_input = st.number_input("Zona UTM", value=int(init_z), min_value=1, max_value=60, step=1)
+        hemi_input = st.selectbox("Hemisferio", ("Norte", "Sur"), index=0 if init_north else 1)
+        
+        try:
+            l_conv, lo_conv = utm.to_latlon(easting_input, northing_input, int(zone_input), northern=(hemi_input=="Norte"))
+            l_conv = round(l_conv, 6)
+            lo_conv = round(lo_conv, 6)
+            st.info(f"📍 Lat/Lon equivalente: {l_conv}, {lo_conv}")
+            
+            if l_conv != st.session_state['lat'] or lo_conv != st.session_state['lon']:
+                st.session_state['lat'] = l_conv
+                st.session_state['lon'] = lo_conv
+                st.rerun()
+        except Exception as e:
+            st.error("Error al convertir UTM. Verifique los valores.")
+
+    st.markdown("---")
+    start_date = st.text_input("Fecha Inicio (AAAAMMDD)", value="20201001")
+    end_date = st.text_input("Fecha Fin (AAAAMMDD)", value="20250331")
+    cad = st.number_input("CAD del Suelo (mm)", value=100.0, min_value=10.0, max_value=500.0)
+    
+    run_btn = st.button("🚀 Cargar y Calcular", type="primary")
 
 # --- VENTANAS DE COORDENADAS ACTUALES EN PANTALLA ---
 lat_val = st.session_state['lat']
@@ -321,7 +294,7 @@ if st.session_state.get('loaded', False):
             label=f"📥 Descargar CSV ({escala})",
             data=csv_data,
             file_name=f"clima_{escala.lower()}_{lat_val}_{lon_val}.csv",
-            mime="text/csv"
+            mime="text/css"
         )
 else:
-    st.info("👆 Configura tus coordenadas (Geográficas o UTM) en la barra lateral o haz clic/busca en el mapa satelital, y presiona **'Cargar y Calcular'**.")
+    st.info("👆 Selecciona tu ubicación haciendo clic en el mapa o escribiendo las coordenadas en la barra lateral, y presiona **'Cargar y Calcular'**.")
