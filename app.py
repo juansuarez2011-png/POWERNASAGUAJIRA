@@ -12,8 +12,8 @@ from streamlit_folium import st_folium
 
 # Configuración adaptada para móviles y PC
 st.set_page_config(
-    page_title="Syntro - Dashboard Climático con Mapa Interactivo",
-    page_icon="🗺️",
+    page_title="Syntro - Dashboard Climático Satelital",
+    page_icon="🛰️",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -25,20 +25,18 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🌍 Syntro: Dashboard Climático con Selección Interactiva en Mapa")
-st.markdown("Plataforma de balance hídrico y teledetección (NASA POWER) sincronizada para **Móvil y PC**.")
+st.title("🛰️ Syntro: Dashboard Climático con Imagen Satelital Interactiva")
+st.markdown("Sistema avanzado de balance hídrico (NASA POWER) con selección visual por satélite, sincronizado para **Móvil y PC**.")
 
-# Inicializar variables de sesión para coordenadas si no existen
+# Inicializar coordenadas por defecto si no existen en sesión
 if 'lat' not in st.session_state:
     st.session_state['lat'] = 8.0000
 if 'lon' not in st.session_state:
     st.session_state['lon'] = -66.0000
 
-# Barra Lateral (Sidebar) para Parámetros de Fechas y Modelo
+# Barra Lateral (Sidebar) para Parámetros
 with st.sidebar:
     st.header("⚙️ Configuración del Modelo")
-    
-    coord_system = st.selectbox("Sistema de Visualización", ("Geográficas (Lat/Lon)", "UTM (Metros)"))
     
     st.markdown("---")
     start_date = st.text_input("Fecha Inicio (AAAAMMDD)", value="20201001")
@@ -47,31 +45,50 @@ with st.sidebar:
     
     run_btn = st.button("🚀 Cargar y Calcular", type="primary")
 
-# --- SECCIÓN DEL MAPA INTERACTIVO CON BOTÓN DE MOSTRAR / OCULTAR ---
+# --- MAPA INTERACTIVO CON IMAGEN SATELITAL ---
 st.markdown("---")
-mostrar_mapa = st.toggle("🗺️ Mostrar / Ocultar Mapa Interactivo de Selección", value=True)
+mostrar_mapa = st.toggle("🗺️ Mostrar / Ocultar Mapa Satelital Interactivo", value=True)
 
 if mostrar_mapa:
-    st.info("💡 **Instrucciones:** Haz clic en cualquier punto del mapa para seleccionar automáticamente las coordenadas del sitio de estudio.")
+    st.info("💡 **Instrucciones:** Navega por el mapa con imagen satelital y haz clic exactamente sobre tu zona de estudio para capturar las coordenadas.")
     
-    # Crear mapa centrado en la última ubicación o por defecto en Venezuela
+    # Crear mapa centrado en la ubicación actual
     m = folium.Map(
         location=[st.session_state['lat'], st.session_state['lon']], 
-        zoom_start=6,
-        tiles="OpenStreetMap"
+        zoom_start=11,
+        tiles=None # Desactivar tiles por defecto para configurar satélite limpio
     )
     
-    # Agregar marcador en la posición actual
+    # Capa 1: Imagen Satelital de Alta Resolución (Estilo Google Earth / Bing Maps)
+    folium.TileLayer(
+        tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        attr='Esri World Imagery (Satélite)',
+        name='🛰️ Satélite',
+        overlay=False,
+        control=True
+    ).add_to(m)
+    
+    # Capa 2: Mapa de Calles y Referencias (Opcional)
+    folium.TileLayer(
+        tiles='openstreetmap',
+        name='🗺️ Calles',
+        overlay=False,
+        control=True
+    ).add_to(m)
+
+    # Marcador de la posición seleccionada
     folium.Marker(
         [st.session_state['lat'], st.session_state['lon']],
         popup=f"Lat: {st.session_state['lat']}, Lon: {st.session_state['lon']}",
-        icon=folium.Icon(color="red", icon="info-sign")
+        icon=folium.Icon(color="red", icon="crosshairs", prefix="fa")
     ).add_to(m)
     
-    # Renderizar mapa interactivo y capturar clics
-    map_data = st_folium(m, height=400, use_container_width=True, key="mapa_interactivo")
+    # Control de capas para alternar entre Satélite y Calles
+    folium.LayerControl().add_to(m)
     
-    # Si el usuario hace clic en el mapa, actualizar coordenadas
+    # Renderizar el mapa en la interfaz y capturar el clic del usuario
+    map_data = st_folium(m, height=450, use_container_width=True, key="mapa_satelital")
+    
     if map_data and map_data.get("last_clicked"):
         clicked_lat = map_data["last_clicked"]["lat"]
         clicked_lon = map_data["last_clicked"]["lng"]
@@ -80,7 +97,7 @@ if mostrar_mapa:
             st.session_state['lon'] = round(clicked_lon, 6)
             st.rerun()
 
-# Mostrar coordenadas seleccionadas según el sistema elegido
+# Obtener valores actuales y calcular conversión UTM automática
 lat_val = st.session_state['lat']
 lon_val = st.session_state['lon']
 
@@ -90,12 +107,13 @@ try:
 except:
     easting, northing, zone_number, hemisphere = 0.0, 0.0, 19, "Norte"
 
+# Panel visual de coordenadas sincronizadas
 col_c1, col_c2, col_c3 = st.columns(3)
-col_c1.metric("📍 Latitud / Longitud", f"{lat_val}, {lon_val}")
+col_c1.metric("📍 Coordenadas Geográficas", f"{lat_val}, {lon_val}")
 col_c2.metric("📐 Coordenadas UTM (X, Y)", f"{easting:,.1f} E, {northing:,.1f} N")
 col_c3.metric("🌍 Zona UTM / Hemisferio", f"Zona {zone_number} ({hemisphere})")
 
-# Función con caché para optimizar la consulta a la API de la NASA
+# Función con caché para consultar la API de la NASA POWER
 @st.cache_data(show_spinner=True)
 def fetch_nasa_data(lat, lon, start, end):
     url = (
@@ -119,14 +137,14 @@ def fetch_nasa_data(lat, lon, start, end):
 
 if run_btn:
     try:
-        with st.spinner("Conectando con NASA POWER y ejecutando balance hídrico..."):
+        with st.spinner("Conectando con NASA POWER y procesando balance hídrico..."):
             df_raw, api_url = fetch_nasa_data(str(lat_val), str(lon_val), start_date, end_date)
             
             # Limpieza y conversión de fechas
             df_raw['Date'] = pd.to_datetime(df_raw['YEAR'].astype(str) + df_raw['DOY'].astype(str).str.zfill(3), format='%Y%j')
             df_raw['Fecha_Str'] = df_raw['Date'].dt.strftime('%Y-%m-%d')
             
-            # Limpieza estricta de códigos -999
+            # Limpieza de valores nulos (-999)
             variables = ['PRECTOTCORR', 'T2M_MAX', 'T2M_MIN', 'ALLSKY_SFC_SW_DWN', 'RH2M']
             for var in variables:
                 if var in df_raw.columns:
@@ -166,7 +184,7 @@ if run_btn:
             # Guardar dataset diario
             st.session_state['data_diario'] = df_raw
 
-            # Agregaciones temporales superiores (Mensual, Trimestral, Anual)
+            # Agregaciones temporales (Mensual, Trimestral, Anual)
             df_raw['Mes'] = df_raw['Date'].dt.to_period('M').astype(str)
             df_raw['Trimestre'] = df_raw['Date'].dt.year.astype(str) + "-Q" + df_raw['Date'].dt.quarter.astype(str)
             df_raw['Anio'] = df_raw['Date'].dt.year.astype(str)
@@ -187,12 +205,12 @@ if run_btn:
             st.session_state['data_trimestral'] = agg('Trimestre')
             st.session_state['data_anual'] = agg('Anio')
             st.session_state['loaded'] = True
-            st.success("¡Datos cargados y procesados con éxito!")
+            st.success("¡Cálculo hídrico completado con éxito!")
 
     except Exception as e:
         st.error(f"Error en el procesamiento: {str(e)}")
 
-# Sección de Visualización Interactiva Multi-escala y Gráficas
+# Sección de Visualización de Gráficas y Múltiples Escalas
 if st.session_state.get('loaded', False):
     st.markdown("---")
     
@@ -226,19 +244,19 @@ if st.session_state.get('loaded', False):
         vertical_spacing=0.07
     )
 
-    # Fila 1: Lluvia y ETo
+    # Fila 1
     fig.add_trace(go.Bar(x=dff[x_col], y=dff['PRECTOTCORR'], name="Lluvia (mm)", marker_color="royalblue"), row=1, col=1)
     fig.add_trace(go.Scatter(x=dff[x_col], y=dff['ETo'], name="ETo (mm)", mode="lines+markers", marker_color="darkorange"), row=1, col=1)
 
-    # Fila 2: Déficit y Excedente
+    # Fila 2
     fig.add_trace(go.Bar(x=dff[x_col], y=dff['Deficit'], name="Déficit (mm)", marker_color="crimson"), row=2, col=1)
     fig.add_trace(go.Bar(x=dff[x_col], y=dff['Excedente'], name="Excedente (mm)", marker_color="forestgreen"), row=2, col=1)
 
-    # Fila 3: Temperaturas
+    # Fila 3
     fig.add_trace(go.Scatter(x=dff[x_col], y=dff['T2M_MAX'], name="T. Máx (°C)", mode="lines+markers", marker_color="firebrick"), row=3, col=1)
     fig.add_trace(go.Scatter(x=dff[x_col], y=dff['T2M_MIN'], name="T. Mín (°C)", mode="lines+markers", marker_color="navy"), row=3, col=1)
 
-    # Fila 4: Humedad y Radiación
+    # Fila 4
     fig.add_trace(go.Scatter(x=dff[x_col], y=dff['RH2M'], name="Humedad Rel. (%)", mode="lines+markers", marker_color="purple"), row=4, col=1)
     fig.add_trace(go.Scatter(x=dff[x_col], y=dff['ALLSKY_SFC_SW_DWN'], name="Radiación (MJ/m²)", mode="lines+markers", marker_color="goldenrod"), row=4, col=1)
 
@@ -261,4 +279,4 @@ if st.session_state.get('loaded', False):
             mime="text/csv"
         )
 else:
-    st.info("👆 Selecciona el punto en el mapa interactivo (o usa el botón para ocultarlo), verifica tus coordenadas y haz clic en **'Cargar y Calcular'** en el menú lateral.")
+    st.info("👆 Selecciona tu punto directamente en el mapa satelital, despliega el menú lateral izquierdo si deseas verificar las fechas o CAD, y presiona **'Cargar y Calcular'**.")
