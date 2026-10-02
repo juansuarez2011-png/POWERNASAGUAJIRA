@@ -4,14 +4,13 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from datetime import datetime
 import io
 import utm
 import folium
 from folium.plugins import Geocoder
 from streamlit_folium import st_folium
 
-# Configuración adaptada para móviles y PC
+# Configuración adaptada para PC y Móvil
 st.set_page_config(
     page_title="Syntro - Dashboard Climático Satelital",
     page_icon="🛰️",
@@ -26,10 +25,10 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🛰️️ Syntro: Dashboard Climático con Control de Coordenadas y Mapa Híbrido Fijo")
-st.markdown("Sistema avanzado de balance hídrico (NASA POWER) sincronizado para **Móvil y PC**.")
+st.title("🛰 Syntro: Dashboard Climático con Mapa Híbrido Fijo y Sincronizado")
+st.markdown("Sistema avanzado de balance hídrico sincronizado para **PC y Móvil**.")
 
-# Inicializar estado en sesión si no existen
+# Inicializar estado en sesión
 if 'lat' not in st.session_state:
     st.session_state['lat'] = 8.0000
 if 'lon' not in st.session_state:
@@ -37,50 +36,7 @@ if 'lon' not in st.session_state:
 if 'zoom' not in st.session_state:
     st.session_state['zoom'] = 6
 
-# --- CAPTURAR CLIC EN EL MAPA ANTES DE RENDERIZAR LA BARRA LATERAL ---
-# Esto permite que las coordenadas cambien en el momento y se reflejen inmediatamente en las cajas de texto.
-st.markdown("---")
-mostrar_mapa = st.toggle("🗺️ Mostrar / Ocultar Mapa Interactivo y Buscador de Sectores", value=True)
-
-if mostrar_mapa:
-    st.info("💡 **Instrucciones:** Usa la lupa 🔍 para buscar municipio, estado o sector, o haz clic en cualquier lugar del mapa para mover el punto y actualizar las coordenadas.")
-    
-    m = folium.Map(
-        location=[st.session_state['lat'], st.session_state['lon']], 
-        zoom_start=st.session_state['zoom'],
-        tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
-        attr='Google Híbrido'
-    )
-
-    # Buscador de sectores / municipios / estados
-    Geocoder(
-        position='topright',
-        themed=True,
-        placeholder='Buscar municipio, estado o sector...',
-        add_marker=True
-    ).add_to(m)
-
-    # Marcador fijo en la posición actual
-    folium.Marker(
-        [st.session_state['lat'], st.session_state['lon']],
-        popup=f"Lat: {st.session_state['lat']}, Lon: {st.session_state['lon']}",
-        icon=folium.Icon(color="red", icon="crosshairs", prefix="fa")
-    ).add_to(m)
-    
-    map_data = st_folium(m, height=480, use_container_width=True, key="mapa_interactivo")
-    
-    if map_data:
-        if map_data.get("zoom"):
-            st.session_state['zoom'] = map_data["zoom"]
-        if map_data.get("last_clicked"):
-            clicked_lat = map_data["last_clicked"]["lat"]
-            clicked_lon = map_data["last_clicked"]["lng"]
-            if clicked_lat != st.session_state['lat'] or clicked_lon != st.session_state['lon']:
-                st.session_state['lat'] = round(clicked_lat, 6)
-                st.session_state['lon'] = round(clicked_lon, 6)
-                st.rerun()
-
-# --- BARRA LATERAL CON CONFIGURACIÓN Y VENTANAS DE COORDENADAS DINÁMICAS ---
+# --- BARRA LATERAL CON CONFIGURACIÓN Y COORDENADAS ---
 with st.sidebar:
     st.header("⚙️ Configuración y Coordenadas")
     
@@ -110,7 +66,6 @@ with st.sidebar:
             l_conv, lo_conv = utm.to_latlon(easting_input, northing_input, int(zone_input), northern=(hemi_input=="Norte"))
             l_conv = round(l_conv, 6)
             lo_conv = round(lo_conv, 6)
-            st.info(f"📍 Lat/Lon equivalente: {l_conv}, {lo_conv}")
             
             if l_conv != st.session_state['lat'] or lo_conv != st.session_state['lon']:
                 st.session_state['lat'] = l_conv
@@ -125,6 +80,45 @@ with st.sidebar:
     cad = st.number_input("CAD del Suelo (mm)", value=100.0, min_value=10.0, max_value=500.0)
     
     run_btn = st.button("🚀 Cargar y Calcular", type="primary")
+
+# --- MAPA INTERACTIVO FIJO (GOOGLE HÍBRIDO ÚNICO) ---
+st.markdown("---")
+st.info("💡 **Mapa Híbrido Fijo:** Haz clic en cualquier lugar del mapa para mover el punto y actualizar automáticamente las coordenadas.")
+
+m = folium.Map(
+    location=[st.session_state['lat'], st.session_state['lon']], 
+    zoom_start=st.session_state['zoom'],
+    tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+    attr='Google Híbrido'
+)
+
+# Buscador de sectores / municipios
+Geocoder(
+    position='topright',
+    themed=True,
+    placeholder='Buscar municipio, estado o sector...',
+    add_marker=True
+).add_to(m)
+
+# Marcador en la posición actual
+folium.Marker(
+    [st.session_state['lat'], st.session_state['lon']],
+    popup=f"Lat: {st.session_state['lat']}, Lon: {st.session_state['lon']}",
+    icon=folium.Icon(color="red", icon="crosshairs", prefix="fa")
+).add_to(m)
+
+map_data = st_folium(m, height=450, use_container_width=True, key="mapa_fijo_hibrido")
+
+if map_data:
+    if map_data.get("zoom"):
+        st.session_state['zoom'] = map_data["zoom"]
+    if map_data.get("last_clicked"):
+        clicked_lat = map_data["last_clicked"]["lat"]
+        clicked_lon = map_data["last_clicked"]["lng"]
+        if clicked_lat != st.session_state['lat'] or clicked_lon != st.session_state['lon']:
+            st.session_state['lat'] = round(clicked_lat, 6)
+            st.session_state['lon'] = round(clicked_lon, 6)
+            st.rerun()
 
 # --- VENTANAS DE COORDENADAS ACTUALES EN PANTALLA ---
 lat_val = st.session_state['lat']
@@ -294,7 +288,7 @@ if st.session_state.get('loaded', False):
             label=f"📥 Descargar CSV ({escala})",
             data=csv_data,
             file_name=f"clima_{escala.lower()}_{lat_val}_{lon_val}.csv",
-            mime="text/css"
+            mime="text/csv"
         )
 else:
-    st.info("👆 Selecciona tu ubicación haciendo clic en el mapa o escribiendo las coordenadas en la barra lateral, y presiona **'Cargar y Calcular'**.")
+    st.info("👆 Selecciona tu ubicación haciendo clic en el mapa o escribiendo las coordenadas, y presiona **'Cargar y Calcular'**.")
