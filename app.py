@@ -7,24 +7,40 @@ from plotly.subplots import make_subplots
 from datetime import datetime
 import io
 
-# Configuración de la página adaptable a móviles y PC
+# Configuración adaptada para móviles y PC (Sidebar colapsada por defecto para móviles)
 st.set_page_config(
-    page_title="Syntro - Dashboard Climático NASA POWER",
-    page_icon="🌍",
+    page_title="Syntro - Dashboard Climático Móvil",
+    page_icon="📱",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
-st.title("🌍 Syntro: Dashboard Climático e Hídrico Interactivo")
-st.markdown("Plataforma analítica sincronizada para PC y Dispositivos Móviles (NASA POWER).")
+# Estilo CSS personalizado para mejorar la visualización en pantallas móviles
+st.markdown("""
+    <style>
+    .main {
+        padding: 0rem 0rem;
+    }
+    .stButton>button {
+        width: 100%;
+        font-weight: bold;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+st.title("🌍 Syntro: Dashboard Climático e Hídrico")
+st.markdown("Plataforma de sincronización y análisis (NASA POWER) optimizada para **Móvil y PC**.")
 
 # Barra Lateral (Sidebar) para Parámetros
-st.sidebar.header("⚙️ Configuración del Sitio")
-lat = st.sidebar.text_input("Latitud (- Sur)", value="-8.83")
-lon = st.sidebar.text_input("Longitud (- Oeste)", value="-35.28")
-start_date = st.sidebar.text_input("Fecha Inicio (AAAAMMDD)", value="20201001")
-end_date = st.sidebar.text_input("Fecha Fin (AAAAMMDD)", value="20250331")
-cad = st.sidebar.number_input("CAD del Suelo (mm)", value=100.0, min_value=10.0, max_value=500.0)
+with st.sidebar:
+    st.header("⚙️ Configuración del Sitio")
+    lat = st.text_input("Latitud (- Sur)", value="-8.83")
+    lon = st.text_input("Longitud (- Oeste)", value="-35.28")
+    start_date = st.text_input("Fecha Inicio (AAAAMMDD)", value="20201001")
+    end_date = st.text_input("Fecha Fin (AAAAMMDD)", value="20250331")
+    cad = st.number_input("CAD del Suelo (mm)", value=100.0, min_value=10.0, max_value=500.0)
+    
+    run_btn = st.button("🚀 Cargar y Calcular", type="primary")
 
 # Función con caché para optimizar la consulta a la API de la NASA
 @st.cache_data(show_spinner=True)
@@ -48,9 +64,9 @@ def fetch_nasa_data(lat, lon, start, end):
     df = pd.read_csv(io.StringIO("\n".join(lines[data_idx:])))
     return df, url
 
-if st.sidebar.button("🚀 Cargar y Calcular Dashboard", type="primary"):
+if run_btn:
     try:
-        with st.spinner("Conectando con NASA POWER y procesando balance hídrico..."):
+        with st.spinner("Conectando con NASA POWER y procesando..."):
             df_raw, api_url = fetch_nasa_data(lat, lon, start_date, end_date)
             
             # Limpieza y conversión de fechas
@@ -113,18 +129,18 @@ if st.sidebar.button("🚀 Cargar y Calcular Dashboard", type="primary"):
             st.session_state['data_trimestral'] = agg('Trimestre')
             st.session_state['data_anual'] = agg('Anio')
             st.session_state['loaded'] = True
-            st.success("¡Datos procesados y listos para visualizar!")
+            st.success("¡Datos procesados con éxito!")
 
     except Exception as e:
         st.error(f"Error en el procesamiento: {str(e)}")
 
-# Sección de Visualización Interactiva si los datos están cargados
+# Sección de Visualización Interactiva Adaptada
 if st.session_state.get('loaded', False):
     st.markdown("---")
     
-    # Selector de escala temporal interactivo (Funciona excelente en Celular y PC)
+    # Selector horizontal amigable para dispositivos móviles
     escala = st.radio(
-        "📅 Seleccione la Escala Temporal:",
+        "📅 Escala Temporal:",
         ("Mensual", "Trimestral", "Anual"),
         horizontal=True
     )
@@ -139,53 +155,53 @@ if st.session_state.get('loaded', False):
         dff = st.session_state['data_anual']
         x_col = 'Anio'
 
-    # Construcción de gráficos múltiples con Plotly
+    # Construcción de gráficos optimizados para pantallas verticales y táctiles
     fig = make_subplots(
         rows=4, cols=1,
         subplot_titles=(
-            "Balance Hídrico (Precipitación vs ETo)",
+            "Balance Hídrico (Lluvia vs ETo)",
             "Déficit y Excedente Hídrico",
-            "Temperaturas Medias (Máx y Mín)",
-            "Humedad Relativa y Radiación Solar"
+            "Temperaturas Medias (°C)",
+            "Humedad Relativa y Radiación"
         ),
-        vertical_spacing=0.08
+        vertical_spacing=0.07
     )
 
-    # Fila 1: Lluvia vs ETo
+    # Fila 1
     fig.add_trace(go.Bar(x=dff[x_col], y=dff['PRECTOTCORR'], name="Lluvia (mm)", marker_color="royalblue"), row=1, col=1)
     fig.add_trace(go.Scatter(x=dff[x_col], y=dff['ETo'], name="ETo (mm)", mode="lines+markers", marker_color="darkorange"), row=1, col=1)
 
-    # Fila 2: Déficit y Excedente
+    # Fila 2
     fig.add_trace(go.Bar(x=dff[x_col], y=dff['Deficit'], name="Déficit (mm)", marker_color="crimson"), row=2, col=1)
     fig.add_trace(go.Bar(x=dff[x_col], y=dff['Excedente'], name="Excedente (mm)", marker_color="forestgreen"), row=2, col=1)
 
-    # Fila 3: Temperaturas
+    # Fila 3
     fig.add_trace(go.Scatter(x=dff[x_col], y=dff['T2M_MAX'], name="T. Máx (°C)", mode="lines+markers", marker_color="firebrick"), row=3, col=1)
     fig.add_trace(go.Scatter(x=dff[x_col], y=dff['T2M_MIN'], name="T. Mín (°C)", mode="lines+markers", marker_color="navy"), row=3, col=1)
 
-    # Fila 4: Humedad y Radiación
+    # Fila 4
     fig.add_trace(go.Scatter(x=dff[x_col], y=dff['RH2M'], name="Humedad Rel. (%)", mode="lines+markers", marker_color="purple"), row=4, col=1)
     fig.add_trace(go.Scatter(x=dff[x_col], y=dff['ALLSKY_SFC_SW_DWN'], name="Radiación (MJ/m²)", mode="lines+markers", marker_color="goldenrod"), row=4, col=1)
 
     fig.update_layout(
-        height=1000,
+        height=950,
         template="plotly_white",
-        legend=dict(orientation="h", y=1.02, x=0),
-        margin=dict(l=20, r=20, t=40, b=20)
+        legend=dict(orientation="h", y=1.02, x=0, font=dict(size=10)),
+        margin=dict(l=10, r=10, t=30, b=10)
     )
 
-    # Renderizar gráfico adaptado al contenedor (móvil/PC)
-    st.plotly_chart(fig, use_container_width=True)
+    # Renderizado responsivo para móvil y PC
+    st.plotly_chart(fig, use_container_width=True, config={'responsive': True, 'displayModeBar': False})
 
-    # Tabla de datos y opción de descarga
-    with st.expander("📊 Ver Tabla de Datos y Descargar CSV"):
+    # Sección colapsable para tablas y descargas
+    with st.expander("📊 Ver Tabla de Datos y Descargar"):
         st.dataframe(dff, use_container_width=True)
         csv_data = dff.to_csv(index=False).encode('utf-8')
         st.download_button(
-            label="Descargar CSV de esta vista",
+            label="📥 Descargar CSV",
             data=csv_data,
             file_name=f"clima_{escala.lower()}_{lat}_{lon}.csv",
             mime="text/csv"
         )
 else:
-    st.info("👈 Configura los datos en el menú lateral y presiona **'Cargar y Calcular Dashboard'**.")
+    st.info("👆 Despliega el menú lateral para configurar las coordenadas y presiona **'Cargar y Calcular'**.")
