@@ -25,8 +25,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🛰 Syntro: Dashboard Climático con Mapa Híbrido Fijo y Sincronizado")
-st.markdown("Sistema avanzado de balance hídrico sincronizado para **PC y Móvil**.")
+st.title("🛰 Syntro: Dashboard Climático Satelital Avanzado")
+st.markdown("Sistema profesional de balance hídrico sincronizado para **PC y Móvil**.")
 
 # Inicializar estado en sesión
 if 'lat' not in st.session_state:
@@ -36,91 +36,92 @@ if 'lon' not in st.session_state:
 if 'zoom' not in st.session_state:
     st.session_state['zoom'] = 6
 
-# --- BARRA LATERAL CON CONFIGURACIÓN Y COORDENADAS ---
-with st.sidebar:
-    st.header("⚙️ Configuración y Coordenadas")
-    
-    coord_input_mode = st.radio("Sistema de Coordenadas", ("Geográficas (Lat/Lon)", "UTM (Metros)"))
-    
-    if coord_input_mode == "Geográficas (Lat/Lon)":
-        lat_input = st.number_input("Latitud (- Sur)", value=float(st.session_state['lat']), format="%.6f", step=0.0001)
-        lon_input = st.number_input("Longitud (- Oeste)", value=float(st.session_state['lon']), format="%.6f", step=0.0001)
+# --- FRAGMENTO AISLADO PARA EL MAPA Y COORDENADAS (CERO PESTAÑAZOS) ---
+@st.fragment
+def render_map_and_coords():
+    with st.sidebar:
+        st.header("⚙️ Configuración y Coordenadas")
+        coord_input_mode = st.radio("Sistema de Coordenadas", ("Geográficas (Lat/Lon)", "UTM (Metros)"))
         
-        if lat_input != st.session_state['lat'] or lon_input != st.session_state['lon']:
-            st.session_state['lat'] = lat_input
-            st.session_state['lon'] = lon_input
-            st.rerun()
-    else:
-        try:
-            init_e, init_n, init_z, init_l = utm.from_latlon(st.session_state['lat'], st.session_state['lon'])
-            init_north = st.session_state['lat'] >= 0
-        except:
-            init_e, init_n, init_z, init_north = 400000.0, 1000000.0, 19, True
-
-        easting_input = st.number_input("Easting (X)", value=float(init_e), format="%.2f", step=10.0)
-        northing_input = st.number_input("Northing (Y)", value=float(init_n), format="%.2f", step=10.0)
-        zone_input = st.number_input("Zona UTM", value=int(init_z), min_value=1, max_value=60, step=1)
-        hemi_input = st.selectbox("Hemisferio", ("Norte", "Sur"), index=0 if init_north else 1)
-        
-        try:
-            l_conv, lo_conv = utm.to_latlon(easting_input, northing_input, int(zone_input), northern=(hemi_input=="Norte"))
-            l_conv = round(l_conv, 6)
-            lo_conv = round(lo_conv, 6)
+        if coord_input_mode == "Geográficas (Lat/Lon)":
+            lat_input = st.number_input("Latitud (- Sur)", value=float(st.session_state['lat']), format="%.6f", step=0.0001)
+            lon_input = st.number_input("Longitud (- Oeste)", value=float(st.session_state['lon']), format="%.6f", step=0.0001)
             
-            if l_conv != st.session_state['lat'] or lo_conv != st.session_state['lon']:
-                st.session_state['lat'] = l_conv
-                st.session_state['lon'] = lo_conv
-                st.rerun()
-        except Exception as e:
-            st.error("Error al convertir UTM. Verifique los valores.")
+            if lat_input != st.session_state['lat'] or lon_input != st.session_state['lon']:
+                st.session_state['lat'] = lat_input
+                st.session_state['lon'] = lon_input
+        else:
+            try:
+                init_e, init_n, init_z, init_l = utm.from_latlon(st.session_state['lat'], st.session_state['lon'])
+                init_north = st.session_state['lat'] >= 0
+            except:
+                init_e, init_n, init_z, init_north = 400000.0, 1000000.0, 19, True
+
+            easting_input = st.number_input("Easting (X)", value=float(init_e), format="%.2f", step=10.0)
+            northing_input = st.number_input("Northing (Y)", value=float(init_n), format="%.2f", step=10.0)
+            zone_input = st.number_input("Zona UTM", value=int(init_z), min_value=1, max_value=60, step=1)
+            hemi_input = st.selectbox("Hemisferio", ("Norte", "Sur"), index=0 if init_north else 1)
+            
+            try:
+                l_conv, lo_conv = utm.to_latlon(easting_input, northing_input, int(zone_input), northern=(hemi_input=="Norte"))
+                l_conv = round(l_conv, 6)
+                lo_conv = round(lo_conv, 6)
+                
+                if l_conv != st.session_state['lat'] or lo_conv != st.session_state['lon']:
+                    st.session_state['lat'] = l_conv
+                    st.session_state['lon'] = lo_conv
+            except Exception as e:
+                st.error("Error al convertir UTM.")
+
+        st.markdown("---")
+        st.text_input("Fecha Inicio (AAAAMMDD)", value="20201001", key="f_start")
+        st.text_input("Fecha Fin (AAAAMMDD)", value="20250331", key="f_end")
+        st.number_input("CAD del Suelo (mm)", value=100.0, min_value=10.0, max_value=500.0, key="f_cad")
 
     st.markdown("---")
-    start_date = st.text_input("Fecha Inicio (AAAAMMDD)", value="20201001")
-    end_date = st.text_input("Fecha Fin (AAAAMMDD)", value="20250331")
-    cad = st.number_input("CAD del Suelo (mm)", value=100.0, min_value=10.0, max_value=500.0)
-    
-    run_btn = st.button("🚀 Cargar y Calcular", type="primary")
+    st.info("💡 **Mapa Híbrido:** Haz clic en cualquier punto del mapa para actualizar la posición al instante.")
 
-# --- MAPA INTERACTIVO FIJO (GOOGLE HÍBRIDO ÚNICO) ---
-st.markdown("---")
-st.info("💡 **Mapa Híbrido Fijo:** Haz clic en cualquier lugar del mapa para mover el punto y actualizar automáticamente las coordenadas.")
+    m = folium.Map(
+        location=[st.session_state['lat'], st.session_state['lon']], 
+        zoom_start=st.session_state['zoom'],
+        tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+        attr='Google Híbrido'
+    )
 
-m = folium.Map(
-    location=[st.session_state['lat'], st.session_state['lon']], 
-    zoom_start=st.session_state['zoom'],
-    tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
-    attr='Google Híbrido'
-)
+    Geocoder(position='topright', themed=True, placeholder='Buscar municipio, estado o sector...', add_marker=True).add_to(m)
 
-# Buscador de sectores / municipios
-Geocoder(
-    position='topright',
-    themed=True,
-    placeholder='Buscar municipio, estado o sector...',
-    add_marker=True
-).add_to(m)
+    folium.Marker(
+        [st.session_state['lat'], st.session_state['lon']],
+        popup=f"Lat: {st.session_state['lat']}, Lon: {st.session_state['lon']}",
+        icon=folium.Icon(color="red", icon="crosshairs", prefix="fa")
+    ).add_to(m)
 
-# Marcador en la posición actual
-folium.Marker(
-    [st.session_state['lat'], st.session_state['lon']],
-    popup=f"Lat: {st.session_state['lat']}, Lon: {st.session_state['lon']}",
-    icon=folium.Icon(color="red", icon="crosshairs", prefix="fa")
-).add_to(m)
+    map_data = st_folium(
+        m, 
+        height=420, 
+        use_container_width=True, 
+        key="mapa_fijo_hibrido",
+        returned_objects=["last_clicked", "zoom"]
+    )
 
-map_data = st_folium(m, height=450, use_container_width=True, key="mapa_fijo_hibrido")
+    if map_data:
+        if map_data.get("zoom"):
+            st.session_state['zoom'] = map_data["zoom"]
+        if map_data.get("last_clicked"):
+            clicked_lat = map_data["last_clicked"]["lat"]
+            clicked_lon = map_data["last_clicked"]["lng"]
+            if clicked_lat != st.session_state['lat'] or clicked_lon != st.session_state['lon']:
+                st.session_state['lat'] = round(clicked_lat, 6)
+                st.session_state['lon'] = round(clicked_lon, 6)
+                st.rerun()
 
-if map_data:
-    if map_data.get("zoom"):
-        st.session_state['zoom'] = map_data["zoom"]
-    if map_data.get("last_clicked"):
-        clicked_lat = map_data["last_clicked"]["lat"]
-        clicked_lon = map_data["last_clicked"]["lng"]
-        if clicked_lat != st.session_state['lat'] or clicked_lon != st.session_state['lon']:
-            st.session_state['lat'] = round(clicked_lat, 6)
-            st.session_state['lon'] = round(clicked_lon, 6)
-            st.rerun()
+render_map_and_coords()
 
-# --- VENTANAS DE COORDENADAS ACTUALES EN PANTALLA ---
+# Obtener parámetros de la barra lateral
+start_date = st.session_state.get("f_start", "20201001")
+end_date = st.session_state.get("f_end", "20250331")
+cad = st.session_state.get("f_cad", 100.0)
+
 lat_val = st.session_state['lat']
 lon_val = st.session_state['lon']
 
@@ -135,6 +136,8 @@ col_c1, col_c2, col_c3 = st.columns(3)
 col_c1.metric("🌍 Geográficas (Lat / Lon)", f"{lat_val}, {lon_val}")
 col_c2.metric("📐 UTM (Easting / Northing)", f"{easting:,.1f} E, {northing:,.1f} N")
 col_c3.metric("🌐 Zona UTM y Hemisferio", f"Zona {zone_number} ({hemisphere})")
+
+run_btn = st.button("🚀 Cargar y Calcular Balance Hídrico", type="primary")
 
 @st.cache_data(show_spinner=True)
 def fetch_nasa_data(lat, lon, start, end):
@@ -257,26 +260,33 @@ if st.session_state.get('loaded', False):
             f"Temperaturas Medias ({escala})",
             f"Humedad Relativa y Radiación ({escala})"
         ),
-        vertical_spacing=0.07
+        vertical_spacing=0.1
     )
 
-    fig.add_trace(go.Bar(x=dff[x_col], y=dff['PRECTOTCORR'], name="Lluvia (mm)", marker_color="royalblue"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=dff[x_col], y=dff['ETo'], name="ETo (mm)", mode="lines+markers", marker_color="darkorange"), row=1, col=1)
+    fig.add_trace(go.Bar(x=dff[x_col], y=dff['PRECTOTCORR'], name="Lluvia (mm)", marker_color="#3399ff"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=dff[x_col], y=dff['ETo'], name="ETo (mm)", mode="lines+markers", marker_color="#ff9933"), row=1, col=1)
 
-    fig.add_trace(go.Bar(x=dff[x_col], y=dff['Deficit'], name="Déficit (mm)", marker_color="crimson"), row=2, col=1)
-    fig.add_trace(go.Bar(x=dff[x_col], y=dff['Excedente'], name="Excedente (mm)", marker_color="forestgreen"), row=2, col=1)
+    fig.add_trace(go.Bar(x=dff[x_col], y=dff['Deficit'], name="Déficit (mm)", marker_color="#ff4d4d"), row=2, col=1)
+    fig.add_trace(go.Bar(x=dff[x_col], y=dff['Excedente'], name="Excedente (mm)", marker_color="#2ecc71"), row=2, col=1)
 
-    fig.add_trace(go.Scatter(x=dff[x_col], y=dff['T2M_MAX'], name="T. Máx (°C)", mode="lines+markers", marker_color="firebrick"), row=3, col=1)
-    fig.add_trace(go.Scatter(x=dff[x_col], y=dff['T2M_MIN'], name="T. Mín (°C)", mode="lines+markers", marker_color="navy"), row=3, col=1)
+    fig.add_trace(go.Scatter(x=dff[x_col], y=dff['T2M_MAX'], name="T. Máx (°C)", mode="lines+markers", marker_color="#e74c3c"), row=3, col=1)
+    fig.add_trace(go.Scatter(x=dff[x_col], y=dff['T2M_MIN'], name="T. Mín (°C)", mode="lines+markers", marker_color="#3498db"), row=3, col=1)
 
-    fig.add_trace(go.Scatter(x=dff[x_col], y=dff['RH2M'], name="Humedad Rel. (%)", mode="lines+markers", marker_color="purple"), row=4, col=1)
-    fig.add_trace(go.Scatter(x=dff[x_col], y=dff['ALLSKY_SFC_SW_DWN'], name="Radiación (MJ/m²)", mode="lines+markers", marker_color="goldenrod"), row=4, col=1)
+    fig.add_trace(go.Scatter(x=dff[x_col], y=dff['RH2M'], name="Humedad Rel. (%)", mode="lines+markers", marker_color="#9b59b6"), row=4, col=1)
+    fig.add_trace(go.Scatter(x=dff[x_col], y=dff['ALLSKY_SFC_SW_DWN'], name="Radiación (MJ/m²)", mode="lines+markers", marker_color="#f1c40f"), row=4, col=1)
 
+    # Leyenda posicionada de forma limpia ABAJO de las gráficas para evitar cualquier superposición
     fig.update_layout(
-        height=950,
-        template="plotly_white",
-        legend=dict(orientation="h", y=1.02, x=0, font=dict(size=10)),
-        margin=dict(l=10, r=10, t=30, b=10)
+        height=1050,
+        template="plotly_dark",
+        legend=dict(
+            orientation="h", 
+            y=-0.12, 
+            x=0, 
+            font=dict(size=11, color="white"),
+            bgcolor="rgba(0,0,0,0)"
+        ),
+        margin=dict(l=20, r=20, t=50, b=80)
     )
 
     st.plotly_chart(fig, use_container_width=True, config={'responsive': True, 'displayModeBar': False})
@@ -291,4 +301,4 @@ if st.session_state.get('loaded', False):
             mime="text/csv"
         )
 else:
-    st.info("👆 Selecciona tu ubicación haciendo clic en el mapa o escribiendo las coordenadas, y presiona **'Cargar y Calcular'**.")
+    st.info("👆 Configura tu ubicación en el mapa y presiona **'Cargar y Calcular Balance Hídrico'**.")
