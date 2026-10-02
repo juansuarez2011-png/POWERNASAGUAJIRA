@@ -6,7 +6,9 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime
 import io
+import utm
 import folium
+from folium.plugins import Geocoder
 from streamlit_folium import st_folium
 
 # Configuración adaptada para móviles y PC
@@ -24,10 +26,10 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🛰️ Syntro: Dashboard Climático con Mapas Google y Esri Satelital")
+st.title("🛰️ Syntro: Dashboard Climático con Buscador de Sectores y Mapas Satelitales")
 st.markdown("Sistema avanzado de balance hídrico (NASA POWER) sincronizado para **Móvil y PC**.")
 
-# Inicializar estado de posición y zoom en sesión para evitar reseteos
+# Inicializar estado de posición y zoom en sesión
 if 'lat' not in st.session_state:
     st.session_state['lat'] = 8.0000
 if 'lon' not in st.session_state:
@@ -45,14 +47,14 @@ with st.sidebar:
     
     run_btn = st.button("🚀 Cargar y Calcular", type="primary")
 
-# --- MAPA INTERACTIVO CON GOOGLE Y ESRI SATELITAL ---
+# --- MAPA INTERACTIVO CON BUSCADOR DE SECTOR / MUNICIPIO Y CAPAS SATELITALES ---
 st.markdown("---")
-mostrar_mapa = st.toggle("🗺️ Mostrar / Ocultar Mapa Interactivo", value=True)
+mostrar_mapa = st.toggle("🗺️ Mostrar / Ocultar Mapa Interactivo y Buscador", value=True)
 
 if mostrar_mapa:
-    st.info("💡 **Instrucciones:** Selecciona la capa de tu preferencia (Google Satélite, Google Híbrido, Esri Satelital o Calles) en la esquina superior derecha del mapa y haz clic sobre tu punto de estudio.")
+    st.info("💡 **Instrucciones:** Puedes usar la lupa 🔍 en la esquina superior del mapa para buscar un **municipio, estado o sector** específico, o hacer clic directamente sobre el lote de estudio.")
     
-    # Crear mapa manteniendo el centro y zoom actual de la sesión
+    # Crear mapa manteniendo la vista actual
     m = folium.Map(
         location=[st.session_state['lat'], st.session_state['lon']], 
         zoom_start=st.session_state['zoom'],
@@ -77,11 +79,11 @@ if mostrar_mapa:
         control=True
     ).add_to(m)
 
-    # 3. Capa Google Híbrido (Satélite + Etiquetas)
+    # 3. Capa Google Híbrido (Satélite + Nombres de Sectores, Municipios y Calles)
     folium.TileLayer(
         tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
         attr='Google Híbrido',
-        name='ibrido 🛰️🗺️ Google Híbrido',
+        name='🛰️🗺️ Google Híbrido (Etiquetado)',
         overlay=False,
         control=True
     ).add_to(m)
@@ -95,7 +97,15 @@ if mostrar_mapa:
         control=True
     ).add_to(m)
 
-    # Marcador fijo en la posición seleccionada actual
+    # Agregar Buscador de Lugares (Municipio, Estado, Sector) en el mapa
+    Geocoder(
+        position='topright',
+        themed=True,
+        placeholder='Buscar municipio, estado o sector...',
+        add_marker=True
+    ).add_to(m)
+
+    # Marcador en la posición seleccionada
     folium.Marker(
         [st.session_state['lat'], st.session_state['lon']],
         popup=f"Lat: {st.session_state['lat']}, Lon: {st.session_state['lon']}",
@@ -104,10 +114,10 @@ if mostrar_mapa:
     
     folium.LayerControl().add_to(m)
     
-    # Renderizar mapa y capturar interacción preservando estado
-    map_data = st_folium(m, height=480, use_container_width=True, key="mapa_interactivo")
+    # Renderizar mapa
+    map_data = st_folium(m, height=500, use_container_width=True, key="mapa_interactivo")
     
-    # Guardar zoom y coordenadas del clic sin resetear la vista
+    # Actualizar coordenadas según el clic del usuario sin perder el flujo
     if map_data:
         if map_data.get("zoom"):
             st.session_state['zoom'] = map_data["zoom"]
@@ -119,8 +129,21 @@ if mostrar_mapa:
                 st.session_state['lon'] = round(clicked_lon, 6)
                 st.rerun()
 
+# --- VENTANAS DE COORDENADAS RESTAURADAS (GEOGRÁFICAS Y UTM) ---
 lat_val = st.session_state['lat']
 lon_val = st.session_state['lon']
+
+try:
+    easting, northing, zone_number, zone_letter = utm.from_latlon(lat_val, lon_val)
+    hemisphere = "Norte" if lat_val >= 0 else "Sur"
+except:
+    easting, northing, zone_number, hemisphere = 0.0, 0.0, 19, "Norte"
+
+st.markdown("### 📍 Coordenadas del Punto Seleccionado")
+col_c1, col_c2, col_c3 = st.columns(3)
+col_c1.metric("🌍 Geográficas (Lat / Lon)", f"{lat_val}, {lon_val}")
+col_c2.metric("📐 UTM (Easting / Northing)", f"{easting:,.1f} E, {northing:,.1f} N")
+col_c3.metric("🌐 Zona UTM y Hemisferio", f"Zona {zone_number} ({hemisphere})")
 
 # Función con caché para consultar la API de la NASA POWER
 @st.cache_data(show_spinner=True)
@@ -268,7 +291,7 @@ if st.session_state.get('loaded', False):
 
     st.plotly_chart(fig, use_container_width=True, config={'responsive': True, 'displayModeBar': False})
 
-    with st.expander(f"📊 Ver Tabla de Datos ({escala}) and Descargar CSV"):
+    with st.expander(f"📊 Ver Tabla de Datos ({escala}) y Descargar CSV"):
         st.dataframe(dff, use_container_width=True)
         csv_data = dff.to_csv(index=False).encode('utf-8')
         st.download_button(
@@ -278,4 +301,4 @@ if st.session_state.get('loaded', False):
             mime="text/csv"
         )
 else:
-    st.info("👆 Selecciona tu punto exacto en el mapa interactivo, revisa la configuración en el menú lateral y haz clic en **'Cargar y Calcular'**.")
+    st.info("👆 Busca tu sector, municipio o estado con la lupa del mapa (o haz clic directo), revisa tus ventanas de coordenadas y presiona **'Cargar y Calcular'**.")
