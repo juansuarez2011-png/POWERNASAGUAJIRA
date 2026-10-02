@@ -4,3 +4,5 @@ pandas
 numpy
 plotly
 utm
+folium
+streamlit-folium
