@@ -5,6 +5,7 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import io
+import re
 import utm
 import folium
 from folium.plugins import Geocoder
@@ -13,7 +14,7 @@ from streamlit_folium import st_folium
 # Configuración adaptada para PC y Móvil
 st.set_page_config(
     page_title="Syntro - Dashboard Climático Satelital",
-    page_icon="🛰️",
+    page_icon="🛰️️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -38,6 +39,38 @@ if 'zoom' not in st.session_state:
 
 with st.sidebar:
     st.header("⚙️ Configuración y Coordenadas")
+    
+    # --- NUEVA FUNCIÓN: PARSEAR ENLACE DE GOOGLE MAPS ---
+    st.subheader("🌐 Enlace Directo Google Maps")
+    gmaps_url_input = st.text_input("Pega el enlace de Google Maps aquí:", placeholder="https://www.google.com/maps/place/...")
+    
+    if gmaps_url_input:
+        try:
+            # Buscar formato @lat,lon
+            lat_lon_match = re.search(r'@(-?\d+\.\d+),(-?\d+\.\d+)', gmaps_url_input)
+            # Buscar formato !3dLAT!4dLON (usado frecuentemente en URLs compartidas de pines)
+            alt_match = re.search(r'!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)', gmaps_url_input)
+            
+            if lat_lon_match:
+                new_lat = float(lat_lon_match.group(1))
+                new_lon = float(lat_lon_match.group(2))
+            elif alt_match:
+                new_lat = float(alt_match.group(1))
+                new_lon = float(alt_match.group(2))
+            else:
+                new_lat, new_lon = None, None
+                
+            if new_lat is not None and new_lon is not None:
+                if new_lat != st.session_state['lat'] or new_lon != st.session_state['lon']:
+                    st.session_state['lat'] = round(new_lat, 6)
+                    st.session_state['lon'] = round(new_lon, 6)
+                    st.success("¡Coordenadas extraídas del enlace con éxito!")
+            else:
+                st.warning("No se pudieron detectar coordenadas válidas en el enlace.")
+        except Exception as e:
+            st.error("Error al procesar el enlace de Google Maps.")
+
+    st.markdown("---")
     coord_input_mode = st.radio("Sistema de Coordenadas", ("Geográficas (Lat/Lon)", "UTM (Metros)"))
     
     if coord_input_mode == "Geográficas (Lat/Lon)":
@@ -76,7 +109,7 @@ with st.sidebar:
     st.number_input("CAD del Suelo (mm)", value=100.0, min_value=10.0, max_value=500.0, key="f_cad")
 
 st.markdown("---")
-st.info("💡 **Mapa de Navegación Estable:** Utiliza el buscador de la esquina superior derecha del mapa para localizar cualquier región o sector con total precisión y sin parpadeos.")
+st.info("💡 **Mapa de Navegación Estable:** Pega tu enlace de Google Maps en el panel izquierdo o usa el buscador de la esquina superior derecha para ubicar el punto con total precisión.")
 
 # Renderizado de mapa optimizado y estático sin recargas forzadas por clics simples
 m = folium.Map(
@@ -84,7 +117,7 @@ m = folium.Map(
     zoom_start=st.session_state['zoom'],
     tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
     attr='Google Híbrido',
-    doubleClickZoom=False  # Desactiva el doble clic para evitar saltos indeseados
+    doubleClickZoom=False 
 )
 
 Geocoder(position='topright', themed=True, placeholder='Buscar municipio, estado o sector...', add_marker=True).add_to(m)
@@ -95,7 +128,6 @@ folium.Marker(
     icon=folium.Icon(color="red", icon="crosshairs", prefix="fa")
 ).add_to(m)
 
-# Se muestra el mapa sin disparar reejecuciones automáticas en cada clic
 map_data = st_folium(
     m, 
     height=420, 
@@ -287,7 +319,7 @@ if st.session_state.get('loaded', False):
             label=f"📥 Descargar CSV ({escala})",
             data=csv_data,
             file_name=f"clima_{escala.lower()}_{lat_val}_{lon_val}.csv",
-            mime="text/csv"
+            mime="text/css"
         )
 else:
     st.info("👆 Configura tu ubicación en el panel izquierdo o usa el buscador del mapa, luego presiona **'Cargar y Calcular Balance Hídrico'**.")
