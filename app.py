@@ -26,10 +26,10 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🛰️ Syntro: Dashboard Climático con Buscador de Sectores y Mapas Satelitales")
+st.title("🛰️ Syntro: Dashboard Climático con Control de Coordenadas y Mapas Satelitales")
 st.markdown("Sistema avanzado de balance hídrico (NASA POWER) sincronizado para **Móvil y PC**.")
 
-# Inicializar estado de posición y zoom en sesión
+# Inicializar estado en sesión si no existen
 if 'lat' not in st.session_state:
     st.session_state['lat'] = 8.0000
 if 'lon' not in st.session_state:
@@ -37,9 +37,38 @@ if 'lon' not in st.session_state:
 if 'zoom' not in st.session_state:
     st.session_state['zoom'] = 6
 
-# Barra Lateral (Sidebar) para Parámetros
+# --- BARRA LATERAL CON CONFIGURACIÓN Y VENTANAS DE COORDENADAS ---
 with st.sidebar:
-    st.header("⚙️ Configuración del Modelo")
+    st.header("⚙️ Configuración y Coordenadas")
+    
+    coord_input_mode = st.radio("Sistema de Coordenadas", ("Geográficas (Lat/Lon)", "UTM (Metros)"))
+    
+    if coord_input_mode == "Geográficas (Lat/Lon)":
+        lat_input = st.number_input("Latitud (- Sur)", value=float(st.session_state['lat']), format="("%.6f")")
+        lon_input = st.number_input("Longitud (- Oeste)", value=float(st.session_state['lon']), format="("%.6f")")
+        st.session_state['lat'] = lat_input
+        st.session_state['lon'] = lon_input
+    else:
+        # Calcular UTM inicial basado en la sesión actual
+        try:
+            init_e, init_n, init_z, init_l = utm.from_latlon(st.session_state['lat'], st.session_state['lon'])
+            init_north = st.session_state['lat'] >= 0
+        except:
+            init_e, init_n, init_z, init_north = 400000.0, 1000000.0, 19, True
+
+        easting_input = st.number_input("Easting (X)", value=float(init_e), format="%.2f")
+        northing_input = st.number_input("Northing (Y)", value=float(init_n), format="%.2f")
+        zone_input = st.number_input("Zona UTM", value=int(init_z), min_value=1, max_value=60, step=1)
+        hemi_input = st.selectbox("Hemisferio", ("Norte", "Sur"), index=0 if init_north else 1)
+        
+        try:
+            l_conv, lo_conv = utm.to_latlon(easting_input, northing_input, int(zone_input), northern=(hemi_input=="Norte"))
+            st.session_state['lat'] = round(l_conv, 6)
+            st.session_state['lon'] = round(lo_conv, 6)
+            st.info(f"📍 Lat/Lon equivalente: {st.session_state['lat']}, {st.session_state['lon']}")
+        except Exception as e:
+            st.error("Error al convertir UTM. Verifique los valores.")
+
     st.markdown("---")
     start_date = st.text_input("Fecha Inicio (AAAAMMDD)", value="20201001")
     end_date = st.text_input("Fecha Fin (AAAAMMDD)", value="20250331")
@@ -47,14 +76,13 @@ with st.sidebar:
     
     run_btn = st.button("🚀 Cargar y Calcular", type="primary")
 
-# --- MAPA INTERACTIVO CON BUSCADOR DE SECTOR / MUNICIPIO Y CAPAS SATELITALES ---
+# --- MAPA INTERACTIVO SIN PESTAÑAZOS ---
 st.markdown("---")
-mostrar_mapa = st.toggle("🗺️ Mostrar / Ocultar Mapa Interactivo y Buscador", value=True)
+mostrar_mapa = st.toggle("🗺️ Mostrar / Ocultar Mapa Interactivo y Buscador de Sectores", value=True)
 
 if mostrar_mapa:
-    st.info("💡 **Instrucciones:** Puedes usar la lupa 🔍 en la esquina superior del mapa para buscar un **municipio, estado o sector** específico, o hacer clic directamente sobre el lote de estudio.")
+    st.info("💡 **Instrucciones:** Usa la lupa 🔍 para buscar municipio, estado o sector, o haz clic en el mapa para posicionar el punto sin interrupciones.")
     
-    # Crear mapa manteniendo la vista actual
     m = folium.Map(
         location=[st.session_state['lat'], st.session_state['lon']], 
         zoom_start=st.session_state['zoom'],
@@ -79,16 +107,16 @@ if mostrar_mapa:
         control=True
     ).add_to(m)
 
-    # 3. Capa Google Híbrido (Satélite + Nombres de Sectores, Municipios y Calles)
+    # 3. Capa Google Híbrido (Con nombres de municipios, estados y sectores)
     folium.TileLayer(
         tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
         attr='Google Híbrido',
-        name='🛰️🗺️ Google Híbrido (Etiquetado)',
+        name='🛰️🗺️️ Google Híbrido (Etiquetado)',
         overlay=False,
         control=True
     ).add_to(m)
 
-    # 4. Capa Google Calles / Roadmap
+    # 4. Capa Google Calles
     folium.TileLayer(
         tiles='https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
         attr='Google Maps',
@@ -97,7 +125,7 @@ if mostrar_mapa:
         control=True
     ).add_to(m)
 
-    # Agregar Buscador de Lugares (Municipio, Estado, Sector) en el mapa
+    # Buscador de sectores / municipios / estados
     Geocoder(
         position='topright',
         themed=True,
@@ -105,7 +133,7 @@ if mostrar_mapa:
         add_marker=True
     ).add_to(m)
 
-    # Marcador en la posición seleccionada
+    # Marcador en la posición actual
     folium.Marker(
         [st.session_state['lat'], st.session_state['lon']],
         popup=f"Lat: {st.session_state['lat']}, Lon: {st.session_state['lon']}",
@@ -114,10 +142,9 @@ if mostrar_mapa:
     
     folium.LayerControl().add_to(m)
     
-    # Renderizar mapa
-    map_data = st_folium(m, height=500, use_container_width=True, key="mapa_interactivo")
+    # Renderizar mapa sin forzar recargas automáticas (sin pestañazos)
+    map_data = st_folium(m, height=480, use_container_width=True, key="mapa_interactivo")
     
-    # Actualizar coordenadas según el clic del usuario sin perder el flujo
     if map_data:
         if map_data.get("zoom"):
             st.session_state['zoom'] = map_data["zoom"]
@@ -127,9 +154,8 @@ if mostrar_mapa:
             if clicked_lat != st.session_state['lat'] or clicked_lon != st.session_state['lon']:
                 st.session_state['lat'] = round(clicked_lat, 6)
                 st.session_state['lon'] = round(clicked_lon, 6)
-                st.rerun()
 
-# --- VENTANAS DE COORDENADAS RESTAURADAS (GEOGRÁFICAS Y UTM) ---
+# --- VENTANAS DE COORDENADAS ACTUALES EN PANTALLA ---
 lat_val = st.session_state['lat']
 lon_val = st.session_state['lon']
 
@@ -139,7 +165,7 @@ try:
 except:
     easting, northing, zone_number, hemisphere = 0.0, 0.0, 19, "Norte"
 
-st.markdown("### 📍 Coordenadas del Punto Seleccionado")
+st.markdown("### 📍 Coordenadas Actuales del Sitio")
 col_c1, col_c2, col_c3 = st.columns(3)
 col_c1.metric("🌍 Geográficas (Lat / Lon)", f"{lat_val}, {lon_val}")
 col_c2.metric("📐 UTM (Easting / Northing)", f"{easting:,.1f} E, {northing:,.1f} N")
@@ -301,4 +327,4 @@ if st.session_state.get('loaded', False):
             mime="text/csv"
         )
 else:
-    st.info("👆 Busca tu sector, municipio o estado con la lupa del mapa (o haz clic directo), revisa tus ventanas de coordenadas y presiona **'Cargar y Calcular'**.")
+    st.info("👆 Configura tus coordenadas (Geográficas o UTM) en la barra lateral o haz clic/busca en el mapa satelital, y presiona **'Cargar y Calcular'**.")
